@@ -58,7 +58,7 @@ pip install -r backend/requirements.txt
 python backend/app.py
 ```
 
-The development backend uses `database/local.sqlite3` by default. Set `DATABASE_URL` to a PostgreSQL/Supabase connection string for deployment. The MVP currently supports the canonical `ethereum` chain and uses deterministic demo transactions when no external blockchain adapter is configured. Run the contract tests with:
+The development backend uses `database/local.sqlite3` by default. The configured Supabase project URL is `https://gmlmjsqphbobzmmqcjlt.supabase.co`; set `DATABASE_URL` to the project’s PostgreSQL connection string for live persistence. A server-side database credential is still required and must be supplied through the deployment environment, never committed to Git. The MVP currently supports the canonical `ethereum` chain and uses deterministic demo transactions when no external blockchain adapter is configured. Run the contract tests with:
 
 ```bash
 python -m pytest backend/tests -q
