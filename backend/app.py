@@ -105,7 +105,10 @@ def get_case(case_id: str):
 
 def create_app(test_config: dict[str, Any] | None = None):
     app = Flask(__name__)
-    app.config.from_mapping(SECRET_KEY=os.getenv("SECRET_KEY", "development-only"))
+    app.config.from_mapping(
+        SECRET_KEY=os.getenv("SECRET_KEY", "development-only"),
+        SUPABASE_URL=os.getenv("SUPABASE_URL", "https://gmlmjsqphbobzmmqcjlt.supabase.co"),
+    )
     if test_config:
         app.config.update(test_config)
     origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
