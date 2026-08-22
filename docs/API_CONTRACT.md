@@ -1,203 +1,62 @@
 # API Contract
 
-## Project
-SIH 26183 — Real-Time Identification of Fraud-Linked Cryptocurrency Exchanges from Victim-Reported Suspect Wallet Addresses through Automated Blockchain Analytics
+The backend is a Flask REST API under `/api`. Every response uses the envelope `{"success": true, "data": {}, "error": null}`. Errors use `{"success": false, "data": null, "error": {"code": "ERROR_CODE", "message": "..."}}`.
 
-**Status:** MVP / Mid-Evaluation
-**Backend:** Flask REST API
-**Database:** PostgreSQL / Supabase
-**API prefix:** `/api`
-
-This document is the single source of truth for frontend ↔ backend communication.
-
-## Global Rules
-
-All JSON responses use:
-
-```json
-{"success": true, "data": {}, "error": null}
-```
-
-Errors use:
-
-```json
-{"success": false, "data": null, "error": {"code": "ERROR_CODE", "message": "Human-readable message"}}
-```
-
-| Concept | API representation |
+| Concept | Representation |
 |---|---|
-| UUID | string |
-| Wallet address | string |
-| Transaction hash | string |
-| Cryptocurrency amount | string |
-| Score | integer |
-| Confidence | number 0–1 |
+| UUID | JSON string |
+| Amount | Decimal-preserving JSON string |
+| Score | Integer from 0 to 100 |
+| Confidence | Number from 0 to 1 |
 | Timestamp | ISO 8601 UTC string |
-| Nullable | `null` |
 
-Never represent cryptocurrency amounts as JavaScript floating-point values when precision matters.
+Canonical chain is `ethereum`. Case statuses are `new`, `analyzing`, `under_review`, `escalated`, and `closed`. Risk levels are `low`, `medium`, `high`, and `critical`.
 
-## Canonical Enums
+## Core endpoints
 
-Chain: `ethereum`
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | Dependency-independent health check |
+| `POST` | `/api/cases` | Create a complaint; requires `case_reference` and `fraud_type`; accepts amount, currency, wallet, blockchain, description |
+| `GET` | `/api/cases/{case_id}` | Frontend-ready case detail including analysis, risk, priority, related count, and VASP summary |
+| `PATCH` | `/api/cases/{case_id}` | Update `description`, `fraud_type`, or `currency` |
+| `PATCH` | `/api/cases/{case_id}/status` | Change status with `{ "status": "under_review" }`; writes an audit event |
+| `POST` | `/api/investigations/analyze` | Analyze `{case_id, wallet_address, chain}` using the normalized deterministic mock provider |
+| `GET` | `/api/cases/{case_id}/transactions?page=1&limit=50` | Paginated normalized transactions |
+| `GET` | `/api/cases/{case_id}/graph` | Graph `{nodes, edges}` ready for rendering |
+| `GET` | `/api/cases/{case_id}/risk` | Risk score, level, indicators, and evidence |
+| `GET` | `/api/cases/{case_id}/priority` | Persisted investigation priority score and factors |
+| `GET` | `/api/cases/{case_id}/attribution` | Explainable potential VASP associations |
+| `GET` | `/api/cases/{case_id}/related` | Potentially related cases and observable shared-wallet evidence |
+| `GET` | `/api/cases/{case_id}/report` | Live case, wallet, timeline, graph, risk, priority, related, attribution, and evidence payload |
+| `GET` | `/api/cases/{case_id}/audit` | Case audit trail |
 
-Risk level: `low`, `medium`, `high`, `critical`
+## Case listing and ranking
 
-Transaction status: `pending`, `confirmed`, `failed`, `unknown`
+`GET /api/cases` supports database-side `page`, `limit`, `search`, `status`, `risk_level` (or `risk`), `fraud_type`, `blockchain`, `min_amount`, `max_amount`, `date_from`, `date_to`, `vasp`, `sort`, and `order`. Sort values are `priority`, `priority_score`, `risk_score`, `amount`, and `created_at`. It returns `{page, limit, total, items}`. Search covers case reference, reported wallet address, and transaction hash.
 
-Wallet type: `reported_wallet`, `intermediary`, `exchange`, `vasp`, `unknown`
+`GET /api/cases/top-priority?limit=10` returns actual backend-ranked items. Each item includes `rank`, `case_id`, `id`, `case_reference`, `reported_amount`, `currency`, `fraud_type`, `reported_wallet_address`, `blockchain`, `priority_score`, `risk_score`, `risk_level`, `related_case_count`, `status`, and `created_at`.
 
-Entity type: `vasp`, `exchange`, `bridge`, `defi_protocol`, `unknown`
+## Dashboard, alerts, notes, and demo ingestion
 
-Attribution match type: `known_address`, `entity_label`, `behavioral_match`, `cluster_match`, `unknown`
+| Method | Path | Request/response |
+|---|---|---|
+| `GET` | `/api/dashboard/summary` | Summary counts, total amount, VASP count, relationship count, and recent alert count |
+| `GET` | `/api/dashboard/recent-alerts` | Latest ten alerts |
+| `POST` | `/api/demo/seed` | Idempotently creates and analyzes 60 deterministic demo cases |
+| `GET` | `/api/alerts` | Alerts; optional `read=0` or `read=1` filter |
+| `PATCH` | `/api/alerts/{alert_id}/read` | Optional `{ "read": true }`; marks an alert read/unread |
+| `GET` | `/api/cases/{case_id}/notes` | List investigator notes |
+| `POST` | `/api/cases/{case_id}/notes` | Requires non-empty `{ "note": "..." }` |
+| `PATCH` | `/api/notes/{note_id}` | Replace a note with non-empty `note` |
+| `DELETE` | `/api/notes/{note_id}` | Delete a note |
 
-Indicator severity: `low`, `medium`, `high`, `critical`
+Alerts use `HIGH_RISK_CASE`, `MULTIPLE_RELATED_CASES`, `VASP_MATCH`, and `HIGH_FINANCIAL_IMPACT` where evidence supports generation. Demo data is not real cybercrime intelligence. Risk, priority, related-case detection, and attribution are investigative signals, not proof of criminal identity, ownership, or wrongdoing.
 
-# Endpoints
+## Normalized transaction and graph shapes
 
-## Health
+Transactions contain `id`, `transaction_hash`, `chain`, `from_address`, `to_address`, `asset`, `amount`, `block_number`, `timestamp`, `status`, and `hop`. Graph nodes contain `id`, `address`, `type`, and `label`; graph edges contain `id`, `source`, `target`, `transaction_hash`, `amount`, `asset`, `timestamp`, and `hop`.
 
-`GET /api/health`
+## Error codes
 
-```json
-{"success": true, "data": {"status": "ok"}, "error": null}
-```
-
-## Create Case
-
-`POST /api/cases`
-
-Request:
-
-```json
-{
-  "case_reference": "NCRP-DEMO-001",
-  "fraud_type": "investment_scam",
-  "description": "Suspected cryptocurrency fraud case"
-}
-```
-
-Required: `case_reference`, `fraud_type`.
-
-Response `201` returns the case with `id`, `case_reference`, `fraud_type`, `description`, `status`, `created_at`, and `updated_at`.
-
-## Get Case
-
-`GET /api/cases/{case_id}`
-
-Returns the case object.
-
-## Analyze Wallet
-
-`POST /api/investigations/analyze`
-
-Request:
-
-```json
-{
-  "case_id": "550e8400-e29b-41d4-a716-446655440000",
-  "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
-  "chain": "ethereum"
-}
-```
-
-Response data:
-
-```json
-{
-  "case_id": "550e8400-e29b-41d4-a716-446655440000",
-  "wallet": {
-    "id": "650e8400-e29b-41d4-a716-446655440000",
-    "address": "0x1234567890abcdef1234567890abcdef12345678",
-    "chain": "ethereum",
-    "type": "reported_wallet"
-  },
-  "analysis": {
-    "status": "completed",
-    "transaction_count": 42,
-    "hop_count": 5,
-    "total_transferred_value": "12.450000000000000000"
-  },
-  "risk": {"score": 87, "level": "high"},
-  "attribution": {
-    "entity_name": "Example Exchange",
-    "entity_type": "vasp",
-    "confidence": 0.92
-  }
-}
-```
-
-## Get Transactions
-
-`GET /api/cases/{case_id}/transactions?page=1&limit=50`
-
-Each transaction contains:
-
-```json
-{
-  "id": "UUID",
-  "transaction_hash": "0x...",
-  "chain": "ethereum",
-  "from_address": "0x...",
-  "to_address": "0x...",
-  "asset": "ETH",
-  "amount": "1.250000000000000000",
-  "block_number": 12345678,
-  "timestamp": "2026-08-22T14:30:00Z",
-  "status": "confirmed",
-  "hop": 1
-}
-```
-
-## Get Transaction Graph
-
-`GET /api/cases/{case_id}/graph`
-
-Response data contains `nodes` and `edges`.
-
-Node:
-
-```json
-{"id":"wallet_001","address":"0x...","type":"reported_wallet","label":"Reported Wallet"}
-```
-
-Edge:
-
-```json
-{"id":"edge_001","source":"wallet_001","target":"wallet_002","transaction_hash":"0x...","amount":"1.250000000000000000","asset":"ETH","timestamp":"2026-08-22T14:30:00Z","hop":1}
-```
-
-## Get Attribution
-
-`GET /api/cases/{case_id}/attribution`
-
-Each attribution contains `id`, `wallet_address`, `entity_name`, `entity_type`, `match_type`, `confidence`, `evidence`, and `created_at`.
-
-## Get Risk
-
-`GET /api/cases/{case_id}/risk`
-
-Response data contains `id`, `score` (0–100), `level`, `indicators`, and `created_at`.
-
-An indicator contains `code`, `description`, `severity`, and optional evidence.
-
-## Get Report
-
-`GET /api/cases/{case_id}/report`
-
-Returns the case, wallet, transactions, graph, attribution, and risk information used to display/generate the investigation report.
-
-# Error Codes
-
-`VALIDATION_ERROR`, `MISSING_FIELD`, `INVALID_WALLET_ADDRESS`, `UNSUPPORTED_CHAIN`, `CASE_NOT_FOUND`, `WALLET_NOT_FOUND`, `TRANSACTION_NOT_FOUND`, `ANALYSIS_FAILED`, `BLOCKCHAIN_PROVIDER_ERROR`, `DATABASE_ERROR`, `INTERNAL_ERROR`.
-
-HTTP conventions: `200` success, `201` created, `400` invalid request, `404` missing resource, `409` conflict, `500` internal error, `502` provider failure.
-
-# Integration Rules
-
-- Frontend MUST use exact endpoint paths, field names, datatypes, and enum values.
-- Backend MUST normalize external blockchain-provider responses before returning them.
-- Frontend MUST NOT access the database directly.
-- Backend MUST NOT expose provider-specific response structures.
-- Attribution is an analytical association, not automatic proof of criminal ownership.
-- Any contract change must update this file before dependent code is merged.
+Common codes are `VALIDATION_ERROR`, `MISSING_FIELD`, `INVALID_WALLET_ADDRESS`, `UNSUPPORTED_CHAIN`, `INVALID_STATUS`, `CASE_NOT_FOUND`, `ALERT_NOT_FOUND`, `NOTE_NOT_FOUND`, `CONFLICT`, and `INTERNAL_ERROR`. HTTP status conventions are `200`, `201`, `400`, `404`, `409`, and `500`.

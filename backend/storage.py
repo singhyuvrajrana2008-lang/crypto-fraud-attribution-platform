@@ -21,6 +21,9 @@ class PostgresConnection:
 
     @staticmethod
     def _translate(query: str) -> str:
+        if query.lstrip().upper().startswith("INSERT OR IGNORE"):
+            query = query.replace("INSERT OR IGNORE", "INSERT", 1)
+            query = query.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
         return query.replace("?", "%s")
 
     def execute(self, query: str, params: tuple[Any, ...] = ()):
