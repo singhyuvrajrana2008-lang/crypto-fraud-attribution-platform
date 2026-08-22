@@ -13,6 +13,11 @@ from typing import Any
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 
+try:
+    from .storage import is_postgres_connection, open_database
+except ImportError:  # pragma: no cover - supports `python backend/app.py`
+    from storage import is_postgres_connection, open_database
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DB = BASE_DIR / "database" / "local.sqlite3"
 ETH_ADDRESS = re.compile(r"^0x[a-fA-F0-9]{40}$")
@@ -49,23 +54,33 @@ def db_path() -> str:
 
 def get_db():
     if "db" not in g:
-        path = db_path()
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        g.db = sqlite3.connect(path)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
+        database_url = os.getenv("DATABASE_URL", "")
+        require_postgres = os.getenv("REQUIRE_POSTGRES", "false").lower() == "true"
+        if require_postgres and not database_url.startswith(("postgresql://", "postgres://")):
+            raise RuntimeError("REQUIRE_POSTGRES is enabled but DATABASE_URL is not a Postgres URL")
+        g.db = open_database(database_url, str(DEFAULT_DB))
     return g.db
 
 
 def init_db(database=None):
     database = database or get_db()
+    if is_postgres_connection(database):
+        return
     schema = (BASE_DIR / "database" / "schema.sql").read_text()
     database.executescript(schema)
     database.commit()
 
 
 def row_dict(row):
-    return dict(row) if row is not None else None
+    if row is None:
+        return None
+    result = dict(row)
+    for key, value in result.items():
+        if isinstance(value, uuid.UUID):
+            result[key] = str(value)
+        elif isinstance(value, datetime):
+            result[key] = value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return result
 
 
 def json_row(row):
@@ -131,6 +146,7 @@ def create_app(test_config: dict[str, Any] | None = None):
 
     @app.get("/api/health")
     def health():
+        get_db().execute("SELECT 1").fetchone()
         return envelope({"status": "ok"})
 
     @app.post("/api/cases")
@@ -181,7 +197,7 @@ def create_app(test_config: dict[str, Any] | None = None):
         tx = _demo_transactions(db, wallet_id, address, chain, timestamp)
         risk = _upsert_risk(db, case_id, len(tx))
         attribution = _upsert_attribution(db, case_id, wallet_id)
-        db.execute("UPDATE cases SET status = ?, updated_at = ? WHERE id = ?", ("analyzed", timestamp, case_id))
+        db.execute("UPDATE cases SET updated_at = ? WHERE id = ?", (timestamp, case_id))
         db.commit()
         return envelope({"case_id": case_id, "wallet": {"id": wallet_id, "address": address, "chain": chain, "type": "reported_wallet"}, "analysis": {"status": "completed", "transaction_count": len(tx), "hop_count": max([item["hop"] or 0 for item in tx], default=0), "total_transferred_value": "12.450000000000000000"}, "risk": {"score": risk["score"], "level": risk["level"]}, "attribution": {"entity_name": attribution["entity_name"], "entity_type": attribution["entity_type"], "confidence": attribution["confidence"]}})
 

@@ -86,9 +86,11 @@ Expected data:
 
 ## Database
 
-Run `database/schema.sql` in the Supabase SQL Editor. Run `database/seed.sql` only when demo data is required.
+The Flask backend uses Supabase Postgres whenever `DATABASE_URL` is a `postgresql://` or `postgres://` URL. Copy `.env.example` to `.env`, set the Supabase database password in `DATABASE_URL`, and keep `REQUIRE_POSTGRES=true` in deployed environments so the backend fails fast instead of silently using local SQLite.
 
-The schema must match `docs/DATABASE_SCHEMA.md`.
+The current Supabase project URL is `https://gmlmjsqphbobzmmqcjlt.supabase.co`. Apply `database/schema.sql` in the Supabase SQL Editor only when provisioning a fresh database. Run `database/seed.sql` only when demo data is required. The schema must match `docs/DATABASE_SCHEMA.md`.
+
+For local tests, omit `REQUIRE_POSTGRES` or set it to `false`; the test suite continues to use an in-memory SQLite connection.
 
 ## Frontend
 
