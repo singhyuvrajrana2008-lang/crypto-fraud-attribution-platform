@@ -51,10 +51,20 @@ Follow `docs/SETUP.md` rather than inventing local setup steps.
 Backend:
 
 ```bash
+cp .env.example .env
 python -m venv .venv
+source .venv/bin/activate
 pip install -r backend/requirements.txt
 python backend/app.py
 ```
+
+The development backend uses `database/local.sqlite3` by default. Set `DATABASE_URL` to a PostgreSQL/Supabase connection string for deployment. The MVP currently supports the canonical `ethereum` chain and uses deterministic demo transactions when no external blockchain adapter is configured. Run the contract tests with:
+
+```bash
+python -m pytest backend/tests -q
+```
+
+The health endpoint is available at `GET http://localhost:5000/api/health`; CORS is restricted to the origins listed in `CORS_ORIGINS`.
 
 Frontend:
 
