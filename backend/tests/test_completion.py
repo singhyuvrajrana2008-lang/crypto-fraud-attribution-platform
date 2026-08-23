@@ -66,3 +66,26 @@ def test_seed_is_idempotent_and_alerts_are_readable(client):
     alert_id = alerts[0]["id"]
     assert data(client.patch(f"/api/alerts/{alert_id}/read", json={"read": True}))["read"] in (True, 1)
     assert data(client.get("/api/alerts?read=1"))
+
+
+def test_linked_cases_recalculate_priority_and_delete(client):
+    wallet = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    first = data(client.post("/api/cases", json={"case_reference": "LINK-001", "fraud_type": "investment_scam", "reported_amount": "1000", "reported_wallet_address": wallet, "blockchain": "ethereum"}))
+    first_id = first["id"]
+    data(client.post("/api/investigations/analyze", json={"case_id": first_id, "wallet_address": wallet, "chain": "ethereum"}))
+    before = data(client.get(f"/api/cases/{first_id}/priority"))["priority_score"]
+
+    second = data(client.post("/api/cases", json={"case_reference": "LINK-002", "fraud_type": "phishing", "reported_amount": "1000", "reported_wallet_address": wallet, "blockchain": "ethereum"}))
+    second_id = second["id"]
+    data(client.post("/api/investigations/analyze", json={"case_id": second_id, "wallet_address": wallet, "chain": "ethereum"}))
+    after = data(client.get(f"/api/cases/{first_id}/priority"))
+    assert after["priority_factors"]["linked_cases"] >= 25
+    assert after["priority_score"] > before
+
+    deleted = data(client.delete(f"/api/cases/{second_id}"))
+    assert deleted["case_id"] == second_id
+    assert deleted["deleted"] is True
+    assert first_id in deleted["recalculated_case_ids"]
+    assert client.get(f"/api/cases/{second_id}").status_code == 404
+    assert data(client.get(f"/api/cases/{first_id}/priority"))["priority_factors"]["linked_cases"] == 0
+    assert client.get(f"/api/cases/{first_id}/audit").status_code == 200

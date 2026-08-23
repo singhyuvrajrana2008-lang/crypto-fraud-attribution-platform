@@ -161,7 +161,7 @@ def analysis_summary(case_id: str):
     risk = db.execute("SELECT * FROM risk_assessments WHERE case_id=? ORDER BY created_at DESC LIMIT 1", (case_id,)).fetchone()
     priority = db.execute("SELECT * FROM priorities WHERE case_id=? ORDER BY created_at DESC LIMIT 1", (case_id,)).fetchone()
     attribution = db.execute("SELECT e.name,e.type,a.confidence FROM attributions a LEFT JOIN entities e ON e.id=a.entity_id WHERE a.case_id=? LIMIT 1", (case_id,)).fetchone()
-    related = db.execute("SELECT COUNT(*) AS n FROM case_relationships WHERE case_id=?", (case_id,)).fetchone()["n"]
+    related = db.execute("SELECT COUNT(*) AS n FROM case_relationships WHERE case_id=? OR related_case_id=?", (case_id, case_id)).fetchone()["n"]
     return {"status": "completed" if tx_count else "pending", "transaction_count": tx_count, "hop_count": hop, "wallet_address": wallet["reported_wallet_address"] if wallet else None, "risk": json_row(risk), "priority": json_row(priority), "related_case_count": related, "potential_vasp": json_row(attribution)}
 
 
@@ -212,7 +212,7 @@ def upsert_risk(db, case_id: str, reported_amount: Any, txs: list[dict[str, Any]
 def calculate_priority(db, case_id: str):
     row = db.execute("SELECT c.reported_amount, r.score AS risk_score FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id WHERE c.id=? ORDER BY r.created_at DESC LIMIT 1", (case_id,)).fetchone()
     amount = amount_decimal(row["reported_amount"] if row else 0)
-    related = db.execute("SELECT COUNT(*) AS n FROM case_relationships WHERE case_id=?", (case_id,)).fetchone()["n"]
+    related = db.execute("SELECT COUNT(*) AS n FROM case_relationships WHERE case_id=? OR related_case_id=?", (case_id, case_id)).fetchone()["n"]
     tx_count = db.execute("SELECT COUNT(*) AS n FROM case_transactions WHERE case_id=?", (case_id,)).fetchone()["n"]
     max_hop = db.execute("SELECT COALESCE(MAX(t.hop),0) AS n FROM case_transactions ct JOIN transactions t ON t.id=ct.transaction_id WHERE ct.case_id=?", (case_id,)).fetchone()["n"]
     vasp = db.execute("SELECT COUNT(*) AS n FROM attributions a JOIN entities e ON e.id=a.entity_id WHERE a.case_id=? AND e.type IN ('vasp','exchange')", (case_id,)).fetchone()["n"] > 0
@@ -235,6 +235,15 @@ def create_alert(db, case_id, alert_type, title, message, severity):
         db.execute("INSERT INTO alerts (id,case_id,type,title,message,severity,read,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), case_id, alert_type, title, message, severity, False, now_iso()))
 
 
+def refresh_case_scores(db, case_id: str):
+    tx_rows = db.execute("SELECT t.* FROM case_transactions ct JOIN transactions t ON t.id=ct.transaction_id WHERE ct.case_id=?", (case_id,)).fetchall()
+    txs = [json_row(x) for x in tx_rows]
+    related_count = db.execute("SELECT COUNT(*) AS n FROM case_relationships WHERE case_id=? OR related_case_id=?", (case_id, case_id)).fetchone()["n"]
+    has_vasp = db.execute("SELECT COUNT(*) AS n FROM attributions a JOIN entities e ON e.id=a.entity_id WHERE a.case_id=? AND e.type IN ('vasp','exchange')", (case_id,)).fetchone()["n"] > 0
+    upsert_risk(db, case_id, get_case(case_id)["reported_amount"], txs, related_count, has_vasp)
+    return calculate_priority(db, case_id)
+
+
 def correlate(db, case_id: str):
     base = db.execute("SELECT reported_wallet_address FROM cases WHERE id=?", (case_id,)).fetchone()
     if not base:
@@ -251,9 +260,13 @@ def correlate(db, case_id: str):
                 shared = ("shared_downstream_wallet", 0.84, common["address"])
         if shared:
             exists = db.execute("SELECT id FROM case_relationships WHERE case_id=? AND related_case_id=?", (case_id, other["id"])).fetchone()
+            evidence = {"observable": "shared wallet-flow evidence", "note": "potentially related cases; not proof of common identity"}
             if not exists:
-                db.execute("INSERT INTO case_relationships (id,case_id,related_case_id,relationship_type,confidence,evidence,shared_wallet,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), case_id, other["id"], shared[0], shared[1], json_text({"observable": "shared wallet-flow evidence", "note": "potentially related cases; not proof of common identity"}), shared[2], now_iso()))
-            results.append({"related_case_id": other["id"], "relationship_type": shared[0], "confidence": shared[1], "evidence": {"observable": "shared wallet-flow evidence", "note": "potentially related cases; not proof of common identity"}, "shared_wallet": shared[2]})
+                db.execute("INSERT INTO case_relationships (id,case_id,related_case_id,relationship_type,confidence,evidence,shared_wallet,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), case_id, other["id"], shared[0], shared[1], json_text(evidence), shared[2], now_iso()))
+            reciprocal = db.execute("SELECT id FROM case_relationships WHERE case_id=? AND related_case_id=? AND relationship_type=?", (other["id"], case_id, shared[0])).fetchone()
+            if not reciprocal:
+                db.execute("INSERT INTO case_relationships (id,case_id,related_case_id,relationship_type,confidence,evidence,shared_wallet,created_at) VALUES (?,?,?,?,?,?,?,?)", (str(uuid.uuid4()), other["id"], case_id, shared[0], shared[1], json_text(evidence), shared[2], now_iso()))
+            results.append({"related_case_id": other["id"], "relationship_type": shared[0], "confidence": shared[1], "evidence": evidence, "shared_wallet": shared[2]})
     return results
 
 
@@ -296,10 +309,13 @@ def analyze_case(case_id: str, address: str, chain: str):
         audit(case_id, "VASP_ASSOCIATION_FOUND", {"entity": "Demo Exchange", "demo": True})
     txs = [json_row(x) for x in db.execute("SELECT t.* FROM case_transactions ct JOIN transactions t ON t.id=ct.transaction_id WHERE ct.case_id=?", (case_id,)).fetchall()]
     related = correlate(db, case_id)
+    affected_cases = {case_id} | {item["related_case_id"] for item in related}
     has_vasp = True
     db.execute("INSERT INTO analysis_results (id,case_id,status,transaction_count,hop_count,provider,created_at) VALUES (?,?,?,?,?,?,?)", (str(uuid.uuid4()), case_id, "completed", len(txs), max((int(t["hop"] or 0) for t in txs), default=0), "mock", timestamp))
     risk = upsert_risk(db, case_id, get_case(case_id)["reported_amount"], txs, len(related), has_vasp)
-    score, factors = calculate_priority(db, case_id)
+    score, factors = refresh_case_scores(db, case_id)
+    for affected_case_id in affected_cases - {case_id}:
+        refresh_case_scores(db, affected_case_id)
     risk_score = int(risk["score"])
     create_alert(db, case_id, "VASP_MATCH", "Potential VASP association", "A downstream wallet has a deterministic demo VASP association.", "medium")
     if risk_score >= 60: create_alert(db, case_id, "HIGH_RISK_CASE", "High-risk investigative signal", "The rule-based risk score is high; review observable evidence.", "high")
@@ -354,6 +370,22 @@ def create_app(test_config: dict[str, Any] | None = None):
             raise
         return envelope(case_base(get_case(cid))), 201
 
+    @app.delete("/api/cases/<case_id>")
+    def delete_case(case_id):
+        if not get_case(case_id): return fail("CASE_NOT_FOUND", "Case not found", 404)
+        db = get_db()
+        affected = [row["case_id"] if row["related_case_id"] == case_id else row["related_case_id"] for row in db.execute("SELECT case_id,related_case_id FROM case_relationships WHERE case_id=? OR related_case_id=?", (case_id, case_id)).fetchall()]
+        affected = list(dict.fromkeys(affected))
+        db.execute("DELETE FROM case_relationships WHERE case_id=? OR related_case_id=?", (case_id, case_id))
+        db.execute("DELETE FROM risk_indicators WHERE risk_assessment_id IN (SELECT id FROM risk_assessments WHERE case_id=?)", (case_id,))
+        for table in ("case_wallets", "case_transactions", "attributions", "analysis_results", "risk_assessments", "priorities", "alerts", "investigation_notes", "investigation_reports", "audit_logs"):
+            db.execute(f"DELETE FROM {table} WHERE case_id=?", (case_id,))
+        db.execute("DELETE FROM cases WHERE id=?", (case_id,))
+        for affected_case_id in affected:
+            if get_case(affected_case_id): refresh_case_scores(db, affected_case_id)
+        db.commit()
+        return envelope({"case_id": case_id, "deleted": True, "recalculated_case_ids": affected})
+
     @app.get("/api/cases")
     def list_cases():
         args = request.args; page = max(1, int(args.get("page", 1))); limit = min(100, max(1, int(args.get("limit", 25))))
@@ -365,20 +397,22 @@ def create_app(test_config: dict[str, Any] | None = None):
         if search: where.append("(c.case_reference LIKE ? OR c.reported_wallet_address LIKE ? OR EXISTS (SELECT 1 FROM case_transactions ct JOIN transactions t ON t.id=ct.transaction_id WHERE ct.case_id=c.id AND t.transaction_hash LIKE ?))"); params += [f"%{search}%"] * 3
         for key, column in (("status", "c.status"), ("fraud_type", "c.fraud_type"), ("blockchain", "c.blockchain")):
             if args.get(key): where.append(f"{column}=?"); params.append(args[key])
-        if args.get("risk_level") or args.get("risk"): where.append("COALESCE(r.level,'low')=?"); params.append(args.get("risk_level", args.get("risk")))
+        requested_risk = args.get("risk_level", args.get("risk"))
+        if requested_risk == "high": where.append("COALESCE(r.level,'low') IN (?,?)"); params.extend(["high", "critical"])
+        elif requested_risk: where.append("COALESCE(r.level,'low')=?"); params.append(requested_risk)
         if args.get("min_amount"): where.append("c.reported_amount>=?"); params.append(args["min_amount"])
         if args.get("max_amount"): where.append("c.reported_amount<=?"); params.append(args["max_amount"])
         if args.get("date_from"): where.append("c.created_at>=?"); params.append(args["date_from"])
         if args.get("date_to"): where.append("c.created_at<=?"); params.append(args["date_to"])
         if args.get("vasp") == "true": where.append("EXISTS (SELECT 1 FROM attributions a JOIN entities e ON e.id=a.entity_id WHERE a.case_id=c.id AND e.type IN ('vasp','exchange'))")
         db = get_db(); total = db.execute(f"SELECT COUNT(*) AS n FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id WHERE {' AND '.join(where)}", tuple(params)).fetchone()["n"]
-        rows = db.execute(f"SELECT c.*,COALESCE(r.score,0) AS risk_score,COALESCE(r.level,'low') AS risk_level,(SELECT COUNT(*) FROM case_relationships cr WHERE cr.case_id=c.id) AS related_case_count FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id WHERE {' AND '.join(where)} ORDER BY {order} {direction} LIMIT ? OFFSET ?", tuple(params + [limit, (page-1)*limit])).fetchall()
+        rows = db.execute(f"SELECT c.*,COALESCE(r.score,0) AS risk_score,COALESCE(r.level,'low') AS risk_level,(SELECT COUNT(*) FROM case_relationships cr WHERE cr.case_id=c.id OR cr.related_case_id=c.id) AS related_case_count FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id WHERE {' AND '.join(where)} ORDER BY {order} {direction} LIMIT ? OFFSET ?", tuple(params + [limit, (page-1)*limit])).fetchall()
         return envelope({"page": page, "limit": limit, "total": total, "items": [case_base(r) for r in rows]})
 
     @app.get("/api/cases/top-priority")
     def top_priority():
         limit = min(100, max(1, int(request.args.get("limit", 10)))); db = get_db()
-        rows = db.execute("SELECT c.*,COALESCE(r.score,0) AS risk_score,COALESCE(r.level,'low') AS risk_level,(SELECT COUNT(*) FROM case_relationships cr WHERE cr.case_id=c.id) AS related_case_count FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id ORDER BY c.priority_score DESC,c.created_at ASC LIMIT ?", (limit,)).fetchall()
+        rows = db.execute("SELECT c.*,COALESCE(r.score,0) AS risk_score,COALESCE(r.level,'low') AS risk_level,(SELECT COUNT(*) FROM case_relationships cr WHERE cr.case_id=c.id OR cr.related_case_id=c.id) AS related_case_count FROM cases c LEFT JOIN risk_assessments r ON r.case_id=c.id ORDER BY c.priority_score DESC,c.created_at ASC LIMIT ?", (limit,)).fetchall()
         items = []
         for rank, row in enumerate(rows, 1):
             data = case_base(row); data["rank"] = rank; data["case_id"] = data["id"]; data["priority_score"] = int(data.get("priority_score") or 0); items.append(data)
@@ -452,7 +486,7 @@ def create_app(test_config: dict[str, Any] | None = None):
     @app.get("/api/cases/<case_id>/related")
     def related(case_id):
         if not get_case(case_id): return fail("CASE_NOT_FOUND", "Case not found", 404)
-        rows = get_db().execute("SELECT * FROM case_relationships WHERE case_id=? ORDER BY confidence DESC", (case_id,)).fetchall(); return envelope([json_row(x) for x in rows])
+        rows = get_db().execute("SELECT * FROM case_relationships WHERE case_id=? OR related_case_id=? ORDER BY confidence DESC", (case_id, case_id)).fetchall(); return envelope([json_row(x) for x in rows])
 
     @app.get("/api/dashboard/summary")
     def summary():

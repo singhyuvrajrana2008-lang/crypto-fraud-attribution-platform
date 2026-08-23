@@ -86,19 +86,26 @@ async function loadPriorityQueue() {
   const root = $('priorityQueueBody'); if (!root) return;
   try {
     const payload = await api.getTopPriority(); const rows = Array.isArray(payload) ? payload : (payload.items || []); root.replaceChildren();
-    if (!rows.length) { const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 7; cell.className = 'queue-empty'; cell.textContent = 'No prioritized cases found. Run the demo seed or submit a case first.'; row.append(cell); root.append(row); return; }
+    if (!rows.length) { const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 8; cell.className = 'queue-empty'; cell.textContent = 'No prioritized cases found. Run the demo seed or submit a case first.'; row.append(cell); root.append(row); return; }
     rows.forEach((item, index) => {
       const row = document.createElement('tr');
       const values = [index + 1, item.case_reference || item.id || '—', item.priority_score ?? item.score ?? '—', item.risk_level || item.level || '—', inr(item.reported_amount || item.amount), item.status || '—'];
       values.forEach((value, cellIndex) => { const cell = document.createElement('td'); cell.textContent = String(value); if (cellIndex === 0) cell.className = 'queue-rank'; if (cellIndex === 1) cell.className = 'queue-case'; if (cellIndex === 2) cell.className = 'queue-score'; if (cellIndex === 3) { const badge = document.createElement('span'); badge.className = `queue-risk ${String(value).toLowerCase()}`; badge.textContent = String(value); cell.replaceChildren(badge); } if (cellIndex === 5) cell.className = 'queue-status'; row.append(cell); });
-      const actionCell = document.createElement('td'); const action = document.createElement('a'); action.className = 'queue-open'; action.href = '#demo'; action.dataset.queueCase = item.id || ''; action.textContent = 'Open case →'; actionCell.append(action); row.append(actionCell); root.append(row);
+      const actionCell = document.createElement('td'); const action = document.createElement('a'); action.className = 'queue-open'; action.href = '#demo'; action.dataset.queueCase = item.id || ''; action.textContent = 'Open case · coming soon'; actionCell.append(action); row.append(actionCell);
+      const deleteCell = document.createElement('td'); const deleteButton = document.createElement('button'); deleteButton.className = 'queue-delete'; deleteButton.type = 'button'; deleteButton.dataset.deleteCase = item.id || ''; deleteButton.dataset.caseReference = item.case_reference || item.id || ''; deleteButton.textContent = 'Delete complaint'; deleteCell.append(deleteButton); row.append(deleteCell); root.append(row);
     });
     setText('queueStatus', `${rows.length} live case${rows.length === 1 ? '' : 's'} loaded from the backend priority queue.`);
-  } catch (error) { root.replaceChildren(); const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 7; cell.className = 'queue-empty'; cell.textContent = error.message; row.append(cell); root.append(row); }
+  } catch (error) { root.replaceChildren(); const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 8; cell.className = 'queue-empty'; cell.textContent = error.message; row.append(cell); root.append(row); }
 }
 
-async function openQueueCase(id) {
-  if (!id) return; try { const detail = await api.getCase(id); if ($('walletInput')) $('walletInput').value = detail.reported_wallet_address || ''; if ($('amountInput')) $('amountInput').value = detail.reported_amount || ''; } catch { /* The demo form remains usable even when a queue detail is unavailable. */ } }
+async function openQueueCase() {
+  setText('queueStatus', 'Case opening integration is coming soon. Use Live Demo to run a selected wallet through the current MVP workflow.');
+}
+
+async function deleteQueueCase(id, reference) {
+  if (!id || !window.confirm(`Delete complaint ${reference}? This removes the complaint and its dependent evidence.`)) return;
+  try { await api.deleteCase(id); if (state.caseId === id) { state.caseId = null; $('resultsState')?.classList.remove('active'); if ($('placeholderState')) $('placeholderState').style.display = 'flex'; } await loadPriorityQueue(); setText('queueStatus', `Complaint ${reference} was deleted.`); } catch (error) { setText('queueStatus', `Delete failed: ${error.message}`); }
+}
 
 function init() {
   setSession();
@@ -107,7 +114,7 @@ function init() {
   document.querySelectorAll('#roleToggle button').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('#roleToggle button').forEach((item) => item.classList.remove('active')); button.classList.add('active'); }));
   document.addEventListener('submit', (event) => { if (event.target?.id === 'caseForm') { event.preventDefault(); event.stopImmediatePropagation(); runAnalysis(event); } }, true);
   document.addEventListener('click', (event) => { if (event.target?.closest?.('#reportBtn')) { event.preventDefault(); event.stopImmediatePropagation(); generateReport(); } }, true);
-  document.addEventListener('click', (event) => { const link = event.target?.closest?.('[data-queue-case]'); if (link) openQueueCase(link.dataset.queueCase); }, true);
+  document.addEventListener('click', (event) => { const link = event.target?.closest?.('[data-queue-case]'); if (link) { event.preventDefault(); openQueueCase(); } const deleteButton = event.target?.closest?.('[data-delete-case]'); if (deleteButton) deleteQueueCase(deleteButton.dataset.deleteCase, deleteButton.dataset.caseReference); }, true);
   const chain = $('chainInput'); if (chain) [...chain.options].forEach((option) => { const supported = option.textContent.trim() === 'Ethereum'; option.disabled = !supported; option.textContent = supported ? 'Ethereum' : `${option.textContent} · coming soon`; });
   document.documentElement.dataset.apiBase = API_BASE_URL;
   loadPriorityQueue();
