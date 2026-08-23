@@ -73,7 +73,7 @@ async function runAnalysis(event) {
     const created = await api.createCase({ case_reference: `CHAINTRACE-${Date.now()}`, fraud_type: fraudLabel.toLowerCase().replaceAll(' ', '_'), reported_amount: amount || '0', currency: 'INR', reported_wallet_address: wallet, blockchain: 'ethereum', description: 'ChainTrace investigator demo submission.' });
     state.caseId = created.id; await api.analyze({ case_id: state.caseId, wallet_address: wallet, chain: 'ethereum' });
     const [detail, priority, risk, transactions, related, attribution] = await Promise.all([api.getCase(state.caseId), api.getPriority(state.caseId), api.getRisk(state.caseId), api.getTransactions(state.caseId), api.getRelated(state.caseId), api.getAttribution(state.caseId)]);
-    state.report = null; renderResults(detail, priority, risk, transactions, related, attribution);
+    state.report = null; renderResults(detail, priority, risk, transactions, related, attribution); await loadPriorityQueue();
   } catch (error) { showError(error.message); } finally { setBusy(false); }
 }
 
@@ -82,6 +82,24 @@ async function generateReport() {
   try { state.report = await api.getReport(state.caseId); const doc = $('reportDoc'); if (doc) doc.textContent = JSON.stringify(state.report, null, 2); $('reportOut')?.classList.add('active'); } catch (error) { showError(error.message); } finally { if (button) button.disabled = false; }
 }
 
+async function loadPriorityQueue() {
+  const root = $('priorityQueueBody'); if (!root) return;
+  try {
+    const payload = await api.getTopPriority(); const rows = Array.isArray(payload) ? payload : (payload.items || []); root.replaceChildren();
+    if (!rows.length) { const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 7; cell.className = 'queue-empty'; cell.textContent = 'No prioritized cases found. Run the demo seed or submit a case first.'; row.append(cell); root.append(row); return; }
+    rows.forEach((item, index) => {
+      const row = document.createElement('tr');
+      const values = [index + 1, item.case_reference || item.id || '—', item.priority_score ?? item.score ?? '—', item.risk_level || item.level || '—', inr(item.reported_amount || item.amount), item.status || '—'];
+      values.forEach((value, cellIndex) => { const cell = document.createElement('td'); cell.textContent = String(value); if (cellIndex === 0) cell.className = 'queue-rank'; if (cellIndex === 1) cell.className = 'queue-case'; if (cellIndex === 2) cell.className = 'queue-score'; if (cellIndex === 3) { const badge = document.createElement('span'); badge.className = `queue-risk ${String(value).toLowerCase()}`; badge.textContent = String(value); cell.replaceChildren(badge); } if (cellIndex === 5) cell.className = 'queue-status'; row.append(cell); });
+      const actionCell = document.createElement('td'); const action = document.createElement('a'); action.className = 'queue-open'; action.href = '#demo'; action.dataset.queueCase = item.id || ''; action.textContent = 'Open case →'; actionCell.append(action); row.append(actionCell); root.append(row);
+    });
+    setText('queueStatus', `${rows.length} live case${rows.length === 1 ? '' : 's'} loaded from the backend priority queue.`);
+  } catch (error) { root.replaceChildren(); const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = 7; cell.className = 'queue-empty'; cell.textContent = error.message; row.append(cell); root.append(row); }
+}
+
+async function openQueueCase(id) {
+  if (!id) return; try { const detail = await api.getCase(id); if ($('walletInput')) $('walletInput').value = detail.reported_wallet_address || ''; if ($('amountInput')) $('amountInput').value = detail.reported_amount || ''; } catch { /* The demo form remains usable even when a queue detail is unavailable. */ } }
+
 function init() {
   setSession();
   $('loginForm')?.addEventListener('submit', (event) => { event.preventDefault(); const email = $('loginEmail').value.trim(), password = $('loginPassword').value; if (!email || !password) { $('loginError')?.classList.add('active'); return; } $('loginError')?.classList.remove('active'); state.user = { name: email.split('@')[0], email, role: document.querySelector('#roleToggle .active')?.dataset.role || 'Investigator' }; localStorage.setItem('chaintrace_user', JSON.stringify(state.user)); setSession(); });
@@ -89,8 +107,10 @@ function init() {
   document.querySelectorAll('#roleToggle button').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('#roleToggle button').forEach((item) => item.classList.remove('active')); button.classList.add('active'); }));
   document.addEventListener('submit', (event) => { if (event.target?.id === 'caseForm') { event.preventDefault(); event.stopImmediatePropagation(); runAnalysis(event); } }, true);
   document.addEventListener('click', (event) => { if (event.target?.closest?.('#reportBtn')) { event.preventDefault(); event.stopImmediatePropagation(); generateReport(); } }, true);
+  document.addEventListener('click', (event) => { const link = event.target?.closest?.('[data-queue-case]'); if (link) openQueueCase(link.dataset.queueCase); }, true);
   const chain = $('chainInput'); if (chain) [...chain.options].forEach((option) => { const supported = option.textContent.trim() === 'Ethereum'; option.disabled = !supported; option.textContent = supported ? 'Ethereum' : `${option.textContent} · coming soon`; });
   document.documentElement.dataset.apiBase = API_BASE_URL;
+  loadPriorityQueue();
 }
 
 init();

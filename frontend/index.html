@@ -320,6 +320,23 @@
   .demo-lock p{ font-size:14px; line-height:1.7; max-width:400px; margin:0; }
   .demo-lock a{ color:var(--mint); }
 
+  .queue-shell{ background:var(--bg-panel); border:1px solid var(--line); border-radius:10px; overflow:auto; }
+  .queue-table{ width:100%; min-width:760px; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
+  .queue-table th{ text-align:left; color:var(--mint); font-size:11px; letter-spacing:.1em; text-transform:uppercase; padding:16px 18px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  .queue-table td{ color:var(--muted); padding:16px 18px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  .queue-table tr:last-child td{ border-bottom:none; }
+  .queue-table tr:hover td{ background:rgba(52,232,154,.04); color:var(--ink); }
+  .queue-rank{ color:var(--mint-bright)!important; font-size:16px; font-weight:700; }
+  .queue-case{ color:var(--ink)!important; }
+  .queue-score{ color:var(--mint)!important; font-size:15px; }
+  .queue-risk{ display:inline-block; padding:5px 9px; border:1px solid var(--line); border-radius:999px; text-transform:uppercase; font-size:10px; letter-spacing:.08em; }
+  .queue-risk.high,.queue-risk.critical{ color:var(--risk); border-color:rgba(255,107,87,.4); }
+  .queue-risk.medium{ color:var(--amber); border-color:rgba(255,207,107,.4); }
+  .queue-open{ color:var(--mint); text-decoration:none; white-space:nowrap; }
+  .queue-open:hover{ color:var(--mint-bright); }
+  .queue-status{ color:var(--muted); font-size:11px; }
+  .queue-empty{ color:var(--muted); padding:28px 18px; }
+
   footer{
     padding:60px clamp(20px,6vw,90px) 40px; border-top:1px solid var(--line);
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;
@@ -339,6 +356,7 @@
     <a href="#pipeline">Pipeline</a>
     <a href="#login">Login</a>
     <a href="#demo">Live Demo</a>
+    <a href="#priority-queue">Priority Queue</a>
     <a href="#features">Features</a>
     <a href="#stack">Stack</a>
     <a href="#mvp">MVP</a>
@@ -455,6 +473,19 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <section id="priority-queue">
+    <div class="kicker">Operations</div>
+    <h2>Top 10 priority queue.</h2>
+    <p class="lede">The live investigator queue is ordered by the backend prioritization score, with deterministic tie-breaking. Select a case to jump to the connected analysis workflow.</p>
+    <div class="queue-shell">
+      <table class="queue-table" aria-describedby="queueStatus">
+        <thead><tr><th>Rank</th><th>Case</th><th>Priority score</th><th>Risk</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="priorityQueueBody"><tr><td colspan="7" class="queue-empty">Loading priority queue…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="demo-note" id="queueStatus">Queue data is loaded from <code>/api/cases/top-priority?limit=10</code>.</p>
   </section>
 
   <section id="demo">
