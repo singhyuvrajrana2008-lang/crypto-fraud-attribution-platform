@@ -334,6 +334,8 @@
   .queue-risk.medium{ color:var(--amber); border-color:rgba(255,207,107,.4); }
   .queue-open{ color:var(--mint); text-decoration:none; white-space:nowrap; }
   .queue-open:hover{ color:var(--mint-bright); }
+  .queue-delete{ color:var(--risk); background:transparent; border:1px solid rgba(255,107,87,.35); border-radius:5px; padding:6px 9px; font-family:var(--mono); font-size:10px; cursor:pointer; white-space:nowrap; }
+  .queue-delete:hover{ background:var(--risk-bg); border-color:var(--risk); }
   .queue-status{ color:var(--muted); font-size:11px; }
   .queue-empty{ color:var(--muted); padding:28px 18px; }
 
@@ -481,11 +483,11 @@
     <p class="lede">The live investigator queue is ordered by the backend prioritization score, with deterministic tie-breaking. Select a case to jump to the connected analysis workflow.</p>
     <div class="queue-shell">
       <table class="queue-table" aria-describedby="queueStatus">
-        <thead><tr><th>Rank</th><th>Case</th><th>Priority score</th><th>Risk</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody id="priorityQueueBody"><tr><td colspan="7" class="queue-empty">Loading priority queue…</td></tr></tbody>
+        <thead><tr><th>Rank</th><th>Case</th><th>Priority score</th><th>Risk</th><th>Amount</th><th>Status</th><th>Open</th><th>Complaint</th></tr></thead>
+        <tbody id="priorityQueueBody"><tr><td colspan="8" class="queue-empty">Loading priority queue…</td></tr></tbody>
       </table>
     </div>
-    <p class="demo-note" id="queueStatus">Queue data is loaded from <code>/api/cases/top-priority?limit=10</code>.</p>
+    <p class="demo-note" id="queueStatus">Open case integration is coming soon; delete removes the complaint and its dependent case evidence after confirmation. Queue data is loaded from <code>/api/cases/top-priority?limit=10</code>.</p>
   </section>
 
   <section id="demo">
