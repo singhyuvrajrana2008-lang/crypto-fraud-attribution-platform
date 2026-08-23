@@ -6,9 +6,19 @@ const setText = (id, value) => { const el = $(id); if (el) el.textContent = valu
 const inr = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 const short = (value) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : '—';
 
+function ensurePriorityQueuePanel() {
+  if ($('priority-queue')) return;
+  const demo = $('demo'); if (!demo) return;
+  const panel = document.createElement('section'); panel.id = 'priority-queue';
+  panel.innerHTML = '<div class="kicker">Operations</div><h2>Top 10 priority queue.</h2><p class="lede">Live cases ordered by backend priority score. Opening a case from this queue is coming soon; use Live Demo for the supported analysis workflow.</p><div class="queue-shell"><table class="queue-table"><thead><tr><th>Rank</th><th>Case</th><th>Priority score</th><th>Risk</th><th>Amount</th><th>Status</th><th>Open</th><th>Complaint</th></tr></thead><tbody id="priorityQueueBody"><tr><td colspan="8" class="queue-empty">Loading priority queue…</td></tr></tbody></table></div><p class="demo-note" id="queueStatus">Queue data is loaded from the backend.</p></section>';
+  demo.parentNode.insertBefore(panel, demo);
+  const style = document.createElement('style'); style.dataset.queueStyle = 'true'; style.textContent = '#priority-queue .queue-shell{background:var(--bg-panel);border:1px solid var(--line);border-radius:10px;overflow:auto}#priority-queue .queue-table{width:100%;min-width:760px;border-collapse:collapse;font-family:var(--mono);font-size:12px}#priority-queue th{color:var(--mint);text-align:left;padding:16px 18px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase}#priority-queue td{color:var(--muted);padding:16px 18px;border-bottom:1px solid var(--line)}#priority-queue .queue-rank{color:var(--mint-bright);font-size:16px;font-weight:700}#priority-queue .queue-case{color:var(--ink)}#priority-queue .queue-score{color:var(--mint);font-size:15px}#priority-queue .queue-risk{padding:5px 9px;border:1px solid var(--line);border-radius:999px;text-transform:uppercase;font-size:10px}#priority-queue .queue-risk.high,#priority-queue .queue-risk.critical{color:var(--risk);border-color:rgba(255,107,87,.4)}#priority-queue .queue-risk.medium{color:var(--amber);border-color:rgba(255,207,107,.4)}#priority-queue .queue-open{color:var(--mint);white-space:nowrap}#priority-queue .queue-delete{color:var(--risk);background:transparent;border:1px solid rgba(255,107,87,.35);border-radius:5px;padding:6px 9px;font-family:var(--mono);font-size:10px;cursor:pointer;white-space:nowrap}#priority-queue .queue-status{font-size:11px}#priority-queue .queue-empty{color:var(--muted);padding:28px 18px}'; document.head.append(style);
+}
+
 function setSession() {
   const locked = $('sessionLocked'), out = $('sessionOut'), form = $('caseForm'), lock = $('demoLock');
   const signedIn = Boolean(state.user);
+  if (signedIn) ensurePriorityQueuePanel(); else { $('priority-queue')?.remove(); document.querySelector('style[data-queue-style]')?.remove(); }
   if (locked) locked.style.display = signedIn ? 'none' : 'block';
   if (out) out.classList.toggle('active', signedIn);
   if (form) form.style.display = signedIn ? 'block' : 'none';
@@ -117,7 +127,7 @@ function init() {
   document.addEventListener('click', (event) => { const link = event.target?.closest?.('[data-queue-case]'); if (link) { event.preventDefault(); openQueueCase(); } const deleteButton = event.target?.closest?.('[data-delete-case]'); if (deleteButton) deleteQueueCase(deleteButton.dataset.deleteCase, deleteButton.dataset.caseReference); }, true);
   const chain = $('chainInput'); if (chain) [...chain.options].forEach((option) => { const supported = option.textContent.trim() === 'Ethereum'; option.disabled = !supported; option.textContent = supported ? 'Ethereum' : `${option.textContent} · coming soon`; });
   document.documentElement.dataset.apiBase = API_BASE_URL;
-  loadPriorityQueue();
+  if (state.user) loadPriorityQueue();
 }
 
 init();
