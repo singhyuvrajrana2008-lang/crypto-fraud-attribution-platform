@@ -461,10 +461,11 @@
     <div class="kicker">Try it</div>
     <h2>Run a reported wallet through the pipeline.</h2>
     <p class="lede">
-      A live investigator workflow backed by the Flask API — enter a case the way an investigator would receive
-      one, and the page walks it through tracing, risk scoring, and VASP attribution.
-      <b>Every submission is sent to the connected backend</b>; the result panel is populated from the case, analysis,
-      prioritization, risk, transaction, attribution, correlation, and report endpoints.
+      A client-side simulation of the automated analysis engine — enter a case the way an investigator would receive
+      one, and the page walks it through tracing, risk scoring, and VASP attribution the way the live backend would.
+      <b>No real blockchain lookups happen here</b>; this mirrors the MVP's demo-loader path (Complaint → Automated
+      Analysis → Prioritization → Investigation) with deterministic mock data, so the same inputs always produce the
+      same case file.
     </p>
     <div class="demo-shell">
       <div class="demo-form">
@@ -504,14 +505,14 @@
           <input type="number" id="amountInput" placeholder="240000" min="0" required>
         </div>
         <button type="submit" class="run-btn">Run automated prioritization</button>
-        <p class="demo-note">Framing note: this prioritizes the <i>case</i> for investigation — it never declares who the scammer is. Results below are returned by the connected backend MVP.</p>
+        <p class="demo-note">Framing note: this prioritizes the <i>case</i> for investigation — it never declares who the scammer is. Every figure below is generated locally in your browser.</p>
         </form>
       </div>
 
       <div class="demo-results">
         <div class="placeholder-state" id="placeholderState">
           <div class="ph-icon">＋</div>
-          <p>Submit a wallet on the left to create a persisted case and load its backend-generated priority score, risk indicators, fund-flow path, and potential VASP association.</p>
+          <p>Submit a wallet on the left to generate a mock case file: priority score, risk indicators, a simulated fund-flow path, and a potential VASP association.</p>
         </div>
 
         <div class="results" id="resultsState">
@@ -1473,6 +1474,5 @@ window.addEventListener('resize', resize);
 resize();
 </script>
 
-  <script type="module" src="/integration/chaintrace-runtime.js"></script>
 </body>
 </html>
