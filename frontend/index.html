@@ -320,25 +320,6 @@
   .demo-lock p{ font-size:14px; line-height:1.7; max-width:400px; margin:0; }
   .demo-lock a{ color:var(--mint); }
 
-  .queue-shell{ background:var(--bg-panel); border:1px solid var(--line); border-radius:10px; overflow:auto; }
-  .queue-table{ width:100%; min-width:760px; border-collapse:collapse; font-family:var(--mono); font-size:12px; }
-  .queue-table th{ text-align:left; color:var(--mint); font-size:11px; letter-spacing:.1em; text-transform:uppercase; padding:16px 18px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  .queue-table td{ color:var(--muted); padding:16px 18px; border-bottom:1px solid var(--line); vertical-align:middle; }
-  .queue-table tr:last-child td{ border-bottom:none; }
-  .queue-table tr:hover td{ background:rgba(52,232,154,.04); color:var(--ink); }
-  .queue-rank{ color:var(--mint-bright)!important; font-size:16px; font-weight:700; }
-  .queue-case{ color:var(--ink)!important; }
-  .queue-score{ color:var(--mint)!important; font-size:15px; }
-  .queue-risk{ display:inline-block; padding:5px 9px; border:1px solid var(--line); border-radius:999px; text-transform:uppercase; font-size:10px; letter-spacing:.08em; }
-  .queue-risk.high,.queue-risk.critical{ color:var(--risk); border-color:rgba(255,107,87,.4); }
-  .queue-risk.medium{ color:var(--amber); border-color:rgba(255,207,107,.4); }
-  .queue-open{ color:var(--mint); text-decoration:none; white-space:nowrap; }
-  .queue-open:hover{ color:var(--mint-bright); }
-  .queue-delete{ color:var(--risk); background:transparent; border:1px solid rgba(255,107,87,.35); border-radius:5px; padding:6px 9px; font-family:var(--mono); font-size:10px; cursor:pointer; white-space:nowrap; }
-  .queue-delete:hover{ background:var(--risk-bg); border-color:var(--risk); }
-  .queue-status{ color:var(--muted); font-size:11px; }
-  .queue-empty{ color:var(--muted); padding:28px 18px; }
-
   footer{
     padding:60px clamp(20px,6vw,90px) 40px; border-top:1px solid var(--line);
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;
@@ -358,7 +339,6 @@
     <a href="#pipeline">Pipeline</a>
     <a href="#login">Login</a>
     <a href="#demo">Live Demo</a>
-    <a href="#priority-queue">Priority Queue</a>
     <a href="#features">Features</a>
     <a href="#stack">Stack</a>
     <a href="#mvp">MVP</a>
@@ -477,27 +457,15 @@
     </div>
   </section>
 
-  <section id="priority-queue">
-    <div class="kicker">Operations</div>
-    <h2>Top 10 priority queue.</h2>
-    <p class="lede">The live investigator queue is ordered by the backend prioritization score, with deterministic tie-breaking. Select a case to jump to the connected analysis workflow.</p>
-    <div class="queue-shell">
-      <table class="queue-table" aria-describedby="queueStatus">
-        <thead><tr><th>Rank</th><th>Case</th><th>Priority score</th><th>Risk</th><th>Amount</th><th>Status</th><th>Open</th><th>Complaint</th></tr></thead>
-        <tbody id="priorityQueueBody"><tr><td colspan="8" class="queue-empty">Loading priority queue…</td></tr></tbody>
-      </table>
-    </div>
-    <p class="demo-note" id="queueStatus">Open case integration is coming soon; delete removes the complaint and its dependent case evidence after confirmation. Queue data is loaded from <code>/api/cases/top-priority?limit=10</code>.</p>
-  </section>
-
   <section id="demo">
     <div class="kicker">Try it</div>
     <h2>Run a reported wallet through the pipeline.</h2>
     <p class="lede">
-      A live investigator workflow backed by the Flask API — enter a case the way an investigator would receive
-      one, and the page walks it through tracing, risk scoring, and VASP attribution.
-      <b>Every submission is sent to the connected backend</b>; the result panel is populated from the case, analysis,
-      prioritization, risk, transaction, attribution, correlation, and report endpoints.
+      A client-side simulation of the automated analysis engine — enter a case the way an investigator would receive
+      one, and the page walks it through tracing, risk scoring, and VASP attribution the way the live backend would.
+      <b>No real blockchain lookups happen here</b>; this mirrors the MVP's demo-loader path (Complaint → Automated
+      Analysis → Prioritization → Investigation) with deterministic mock data, so the same inputs always produce the
+      same case file.
     </p>
     <div class="demo-shell">
       <div class="demo-form">
@@ -537,14 +505,14 @@
           <input type="number" id="amountInput" placeholder="240000" min="0" required>
         </div>
         <button type="submit" class="run-btn">Run automated prioritization</button>
-        <p class="demo-note">Framing note: this prioritizes the <i>case</i> for investigation — it never declares who the scammer is. Results below are returned by the connected backend MVP.</p>
+        <p class="demo-note">Framing note: this prioritizes the <i>case</i> for investigation — it never declares who the scammer is. Every figure below is generated locally in your browser.</p>
         </form>
       </div>
 
       <div class="demo-results">
         <div class="placeholder-state" id="placeholderState">
           <div class="ph-icon">＋</div>
-          <p>Submit a wallet on the left to create a persisted case and load its backend-generated priority score, risk indicators, fund-flow path, and potential VASP association.</p>
+          <p>Submit a wallet on the left to generate a mock case file: priority score, risk indicators, a simulated fund-flow path, and a potential VASP association.</p>
         </div>
 
         <div class="results" id="resultsState">
