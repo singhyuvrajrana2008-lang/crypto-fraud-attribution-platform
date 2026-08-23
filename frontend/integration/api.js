@@ -20,6 +20,7 @@ export const api = {
   createCase: (body) => request('/api/cases', { method: 'POST', body: JSON.stringify(body) }),
   analyze: (body) => request('/api/investigations/analyze', { method: 'POST', body: JSON.stringify(body) }),
   getCase: (id) => request(`/api/cases/${encodeURIComponent(id)}`),
+  getTopPriority: () => request('/api/cases/top-priority?limit=10'),
   getPriority: (id) => request(`/api/cases/${encodeURIComponent(id)}/priority`),
   getRisk: (id) => request(`/api/cases/${encodeURIComponent(id)}/risk`),
   getTransactions: (id) => request(`/api/cases/${encodeURIComponent(id)}/transactions?page=1&limit=100`),
